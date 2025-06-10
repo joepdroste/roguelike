@@ -432,6 +432,105 @@ enum Item {
     Freeze,
 }
 
+fn create_item(item_type: Item, x: i32, y: i32) -> Object {
+    match item_type {
+        Item::Heal => {
+            let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "healing potion", false);
+            object.item = Some(Item::Heal);
+            object
+        }
+        Item::Lightning => {
+            let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of lightning bolt", false);
+            object.item = Some(Item::Lightning);
+            object    
+        }
+        Item::Confuse => {
+            let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of confusion", false);
+            object.item = Some(Item::Confuse);
+            object 
+        }
+        Item::Fireball => {
+            let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of fireball", false);
+            object.item = Some(Item::Fireball);
+            object
+        }
+        Item::Blink => {
+            let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of blink", false);
+            object.item = Some(Item::Blink);
+            object
+        }
+        Item::Freeze => {
+            let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of freeze", false);
+            object.item = Some(Item::Freeze);
+            object
+        }
+    }
+}
+
+fn item_spawner_menu(root: &mut Root) -> Option<Item> {
+    let options = vec![
+        "Healing Potion",
+        "Lightning Bolt Scroll",
+        "Freeze Scroll", 
+        "Confusion Scroll",
+        "Fireball Scroll",
+        "Blink Scroll",
+    ];
+
+    let item_types = vec![
+        Item::Heal,
+        Item::Lightning,
+        Item::Freeze,
+        Item::Confuse,
+        Item::Fireball,
+        Item::Blink,
+    ];
+
+    let selected_index = menu("Choose an item to spawn:", &options, INVENTORY_WIDTH, root);
+
+    if let Some(index) = selected_index {
+        Some(item_types[index])
+    } else {
+        None
+    }
+}
+
+fn spawn_item_at_player(game: &mut Game, objects: &mut Vec<Object>, item_type: Item) {
+    let (player_x, player_y) = objects[PLAYER].pos();
+
+    let directions = vec![
+        (0, 0),   
+        (0, -1),  
+        (0, 1),   
+        (-1, 0),  
+        (1, 0),   
+        (-1, -1), 
+        (1, -1),  
+        (-1, 1),  
+        (1, 1),
+    ];
+
+    for (dx, dy) in directions {
+        let spawn_x = player_x + dx;
+        let spawn_y = player_y + dy;
+        
+        if spawn_x >= 0 && spawn_x < MAP_WIDTH && 
+           spawn_y >= 0 && spawn_y < MAP_HEIGHT &&
+           !is_blocked(spawn_x, spawn_y, &game.map, objects) {
+            
+            let item = create_item(item_type, spawn_x, spawn_y);
+            game.messages.add(
+                format!("Spawned {} at ({}, {})", item.name, spawn_x, spawn_y),
+                LIGHT_CYAN
+            );
+            objects.push(item);
+            return;
+        }
+    }
+    
+    game.messages.add("No valid position to spawn item!", RED);
+}
+
 fn pick_item_up(object_id: usize, game: &mut Game, objects: &mut Vec<Object>) {
     if game.inventory.len() >= 26 {
         game.messages.add(
@@ -884,6 +983,12 @@ fn handle_keys(tcod: &mut Tcod, game: &mut Game, objects: &mut Vec<Object>) -> P
             );
             if let Some(inventory_index) = inventory_index {
                 drop_item(inventory_index, game, objects);
+            }
+            DidntTakeTurn
+        }
+        (Key { code: Text, .. }, "=", true) => {
+            if let Some(item_type) = item_spawner_menu(&mut tcod.root) {
+                spawn_item_at_player(game, objects, item_type);
             }
             DidntTakeTurn
         }
