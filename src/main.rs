@@ -29,8 +29,11 @@ const LIGHTNING_DAMAGE: i32 = 40;
 const LIGHTNING_RANGE: i32 = 5;
 const CONFUSE_RANGE: i32 = 8;
 const CONFUSE_NUM_TURNS: i32 = 10;
+const FREEZE_RANGE: i32 = 10;
+const FREEZE_NUM_TURNS: i32 = 10;
 const FIREBALL_RADIUS: i32 = 3;
 const FIREBALL_DAMAGE: i32 = 12;
+const BLINK_RADIUS: i32 = 100;
 
 const ROOM_MAX_SIZE: i32 = 10;
 const ROOM_MIN_SIZE: i32 = 6;
@@ -327,6 +330,10 @@ enum Ai {
         previous_ai: Box<Ai>,
         num_turns: i32,
     },
+    Frozen {
+        previous_ai: Box<Ai>,
+        num_turns: i32,
+    },
 }
 
 fn ai_take_turn(monster_id: usize, tcod: &Tcod, game: &mut Game, objects: &mut [Object]) {
@@ -338,6 +345,10 @@ fn ai_take_turn(monster_id: usize, tcod: &Tcod, game: &mut Game, objects: &mut [
                 previous_ai,
                 num_turns,
             } => ai_confused(monster_id, tcod, game, objects, previous_ai, num_turns),
+            Frozen {
+                previous_ai,
+                num_turns,
+            } => ai_frozen(monster_id, tcod, game, objects, previous_ai, num_turns),
         };
         objects[monster_id].ai = Some(new_ai);
     }
@@ -389,12 +400,36 @@ fn ai_confused(
     }
 }
 
+fn ai_frozen(
+    monster_id: usize,
+    _tcod: &Tcod,
+    game: &mut Game,
+    objects: &mut [Object],
+    previous_ai: Box<Ai>,
+    num_turns: i32,
+) -> Ai {
+    if num_turns >= 0 {
+        Ai::Frozen {
+            previous_ai: previous_ai,
+            num_turns: num_turns - 1,
+        }
+    } else {
+        game.messages.add(
+            format!("The {} is no longer frozen!", objects[monster_id].name),
+            RED,
+        );
+        *previous_ai
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Item {
     Heal,
     Lightning,
     Confuse,
     Fireball,
+    Blink,
+    Freeze,
 }
 
 fn pick_item_up(object_id: usize, game: &mut Game, objects: &mut Vec<Object>) {
@@ -482,17 +517,24 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
                 object.item = Some(Item::Heal);
                 object
             } else if dice < 0.8 {
-                let mut object =
-                    Object::new(x, y, '#', LIGHT_YELLOW, "scroll of lightning bolt", false);
+                let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of lightning bolt", false);
                 object.item = Some(Item::Lightning);
+                object
+            } else if dice < 0.85 {
+                let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of freeze", false);
+                object.item = Some(Item::Freeze);
                 object
             } else if dice < 0.9 {
                 let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of confusion", false);
                 object.item = Some(Item::Confuse);
                 object
-            } else {
+            } else if dice < 0.95 {
                 let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of fireball", false);
                 object.item = Some(Item::Fireball);
+                object
+            } else {
+                let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of blink", false);
+                object.item = Some(Item::Blink);
                 object
             };
             objects.push(item);
@@ -863,6 +905,8 @@ fn use_item(inventory_id: usize, tcod: &mut Tcod, game: &mut Game, objects: &mut
             Lightning => cast_lightning,
             Confuse => cast_confuse,
             Fireball => cast_fireball,
+            Blink => cast_blink,
+            Freeze => cast_freeze,
         };
         match on_use(inventory_id, tcod, game, objects) {
             UseResult::UsedUp => {
@@ -995,6 +1039,53 @@ fn cast_fireball(
         }
     }
 
+    UseResult::UsedUp
+}
+
+fn cast_blink(
+    _inventory_id: usize,
+    tcod: &mut Tcod,
+    game: &mut Game,
+    objects: &mut [Object],
+) -> UseResult {
+    game.messages.add(
+        "Left-click a target tile to blink to that location.",
+        LIGHT_CYAN,
+    );
+
+    let (x, y) = match target_tile(tcod, game, objects, Some(BLINK_RADIUS as f32)) {
+        Some(tile_pos) => tile_pos,
+        None => return UseResult::Cancelled,
+    };
+    objects[PLAYER].set_pos(x, y);
+
+    UseResult::UsedUp
+}
+
+fn cast_freeze(
+    _inventory_id: usize,
+    tcod: &mut Tcod,
+    game: &mut Game,
+    objects: &mut [Object],
+) -> UseResult {
+    let monster_id = target_monster(tcod, game, objects, Some(FREEZE_RANGE as f32));
+    if let Some(monster_id) = monster_id {
+        let old_ai = objects[monster_id].ai.take().unwrap_or(Ai::Basic);
+        objects[monster_id].ai = Some(Ai::Frozen {
+            previous_ai: Box::new(old_ai),
+            num_turns: FREEZE_NUM_TURNS,
+        });
+        game.messages.add(
+            format!(
+                "The {} is frozen solid and cannot move!",
+                objects[monster_id].name
+            ),
+            LIGHT_BLUE,
+        );
+    } else {
+        game.messages.add("No enemy is close enough to freeze.", RED);
+        return UseResult::Cancelled
+    }
     UseResult::UsedUp
 }
 
