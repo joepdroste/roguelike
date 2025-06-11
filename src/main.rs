@@ -1,5 +1,5 @@
-use rand::distr::Distribution;
 use rand::Rng;
+use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
 use serde::{Deserialize, Serialize};
 use std::cmp;
@@ -674,17 +674,20 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
                     object
                 }
                 Item::Lightning => {
-                    let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of lightning bolt", false);
+                    let mut object =
+                        Object::new(x, y, '#', LIGHT_YELLOW, "scroll of lightning bolt", false);
                     object.item = Some(Item::Lightning);
                     object
                 }
                 Item::Fireball => {
-                    let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of fireball", false);
+                    let mut object =
+                        Object::new(x, y, '#', LIGHT_YELLOW, "scroll of fireball", false);
                     object.item = Some(Item::Fireball);
                     object
                 }
                 Item::Confuse => {
-                    let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of confusion", false);
+                    let mut object =
+                        Object::new(x, y, '#', LIGHT_YELLOW, "scroll of confusion", false);
                     object.item = Some(Item::Confuse);
                     object
                 }
@@ -694,7 +697,8 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
                     object
                 }
                 Item::Freeze => {
-                    let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of freeze", false);
+                    let mut object =
+                        Object::new(x, y, '#', LIGHT_YELLOW, "scroll of freeze", false);
                     object.item = Some(Item::Freeze);
                     object
                 }
@@ -1360,8 +1364,19 @@ fn cast_blink(
 
     let (x, y) = match target_tile(tcod, game, objects, Some(BLINK_RADIUS as f32)) {
         Some(tile_pos) => tile_pos,
-        None => return UseResult::Cancelled,
+        None => {
+            game.messages.add("Blink cancelled.", WHITE); // Add a message for cancellation
+            return UseResult::Cancelled;
+        }
     };
+
+    if is_blocked(x, y, &game.map, objects) {
+        game.messages.add("Cannot blink to a blocked tile.", RED);
+        return UseResult::Cancelled;
+    }
+
+    game.messages.add("You teleport to the new location!", LIGHT_GREEN);
+
     objects[PLAYER].set_pos(x, y);
 
     UseResult::UsedUp
