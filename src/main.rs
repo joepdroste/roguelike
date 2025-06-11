@@ -1,10 +1,10 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::cmp;
+use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
-use std::error::Error;
 use std::vec;
 use tcod::colors::*;
 use tcod::console::*;
@@ -86,6 +86,7 @@ struct Game {
     map: Map,
     messages: Messages,
     inventory: Vec<Object>,
+    dungeon_level: u32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -176,6 +177,7 @@ struct Object {
     fighter: Option<Fighter>,
     ai: Option<Ai>,
     item: Option<Item>,
+    always_visible: bool,
 }
 
 impl Object {
@@ -191,6 +193,7 @@ impl Object {
             fighter: None,
             ai: None,
             item: None,
+            always_visible: false,
         }
     }
 
@@ -447,14 +450,15 @@ fn create_item(item_type: Item, x: i32, y: i32) -> Object {
             object
         }
         Item::Lightning => {
-            let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of lightning bolt", false);
+            let mut object =
+                Object::new(x, y, '#', LIGHT_YELLOW, "scroll of lightning bolt", false);
             object.item = Some(Item::Lightning);
-            object    
+            object
         }
         Item::Confuse => {
             let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of confusion", false);
             object.item = Some(Item::Confuse);
-            object 
+            object
         }
         Item::Fireball => {
             let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of fireball", false);
@@ -478,7 +482,7 @@ fn item_spawner_menu(root: &mut Root) -> Option<Item> {
     let options = vec![
         "Healing Potion",
         "Lightning Bolt Scroll",
-        "Freeze Scroll", 
+        "Freeze Scroll",
         "Confusion Scroll",
         "Fireball Scroll",
         "Blink Scroll",
@@ -506,35 +510,37 @@ fn spawn_item_at_player(game: &mut Game, objects: &mut Vec<Object>, item_type: I
     let (player_x, player_y) = objects[PLAYER].pos();
 
     let directions = vec![
-        (0, 0),   
-        (0, -1),  
-        (0, 1),   
-        (-1, 0),  
-        (1, 0),   
-        (-1, -1), 
-        (1, -1),  
-        (-1, 1),  
+        (0, 0),
+        (0, -1),
+        (0, 1),
+        (-1, 0),
+        (1, 0),
+        (-1, -1),
+        (1, -1),
+        (-1, 1),
         (1, 1),
     ];
 
     for (dx, dy) in directions {
         let spawn_x = player_x + dx;
         let spawn_y = player_y + dy;
-        
-        if spawn_x >= 0 && spawn_x < MAP_WIDTH && 
-           spawn_y >= 0 && spawn_y < MAP_HEIGHT &&
-           !is_blocked(spawn_x, spawn_y, &game.map, objects) {
-            
+
+        if spawn_x >= 0
+            && spawn_x < MAP_WIDTH
+            && spawn_y >= 0
+            && spawn_y < MAP_HEIGHT
+            && !is_blocked(spawn_x, spawn_y, &game.map, objects)
+        {
             let item = create_item(item_type, spawn_x, spawn_y);
             game.messages.add(
                 format!("Spawned {} at ({}, {})", item.name, spawn_x, spawn_y),
-                LIGHT_CYAN
+                LIGHT_CYAN,
             );
             objects.push(item);
             return;
         }
     }
-    
+
     game.messages.add("No valid position to spawn item!", RED);
 }
 
@@ -618,12 +624,13 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
         if !is_blocked(x, y, map, objects) {
             let dice = rand::random::<f32>();
 
-            let item = if dice < 0.7 {
+            let mut item = if dice < 0.7 {
                 let mut object = Object::new(x, y, '!', VIOLET, "healing potion", false);
                 object.item = Some(Item::Heal);
                 object
             } else if dice < 0.8 {
-                let mut object = Object::new(x, y, '#', LIGHT_YELLOW, "scroll of lightning bolt", false);
+                let mut object =
+                    Object::new(x, y, '#', LIGHT_YELLOW, "scroll of lightning bolt", false);
                 object.item = Some(Item::Lightning);
                 object
             } else if dice < 0.85 {
@@ -643,9 +650,29 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
                 object.item = Some(Item::Blink);
                 object
             };
+            item.always_visible = true;
             objects.push(item);
         }
     }
+}
+
+fn next_level(tcod: &mut Tcod, game: &mut Game, objects: &mut Vec<Object>) {
+    game.messages.add(
+        "You take a moment to rest, and recover your strength.",
+        VIOLET,
+    );
+    let heal_hp = objects[PLAYER].fighter.map_or(0, |f| f.max_hp / 2);
+    objects[PLAYER].heal(heal_hp);
+
+    game.messages.add(
+        "After a rare moment of peace, you descend deeper into \
+         the heart of the dungeon...",
+        RED,
+    );
+
+    game.dungeon_level += 1;
+    game.map = make_map(objects);
+    initialise_fov(tcod, &game.map);
 }
 
 fn create_h_tunnel(x1: i32, x2: i32, y: i32, map: &mut Map) {
@@ -662,6 +689,8 @@ fn create_v_tunnel(y1: i32, y2: i32, x: i32, map: &mut Map) {
 
 fn make_map(objects: &mut Vec<Object>) -> Map {
     let mut map = vec![vec![Tile::wall(); MAP_HEIGHT as usize]; MAP_WIDTH as usize];
+
+    objects.truncate(1);
 
     let mut rooms = vec![];
 
@@ -701,6 +730,11 @@ fn make_map(objects: &mut Vec<Object>) -> Map {
             rooms.push(new_room);
         }
     }
+
+    let (last_room_x, last_room_y) = rooms[rooms.len() - 1].center();
+    let mut stairs = Object::new(last_room_x, last_room_y, '<', WHITE, "stairs", false);
+    stairs.always_visible = true;
+    objects.push(stairs);
 
     map
 }
@@ -768,7 +802,10 @@ fn render_all(tcod: &mut Tcod, game: &mut Game, objects: &[Object], fov_recomput
 
     let mut to_draw: Vec<_> = objects
         .iter()
-        .filter(|o| tcod.fov.is_in_fov(o.x, o.y))
+        .filter(|o| {
+            tcod.fov.is_in_fov(o.x, o.y)
+                || (o.always_visible && game.map[o.x as usize][o.y as usize].explored)
+        })
         .collect();
     to_draw.sort_by(|o1, o2| o1.blocks.cmp(&o2.blocks));
 
@@ -812,6 +849,14 @@ fn render_all(tcod: &mut Tcod, game: &mut Game, objects: &[Object], fov_recomput
         max_hp,
         LIGHT_RED,
         DARKER_RED,
+    );
+
+    tcod.panel.print_ex(
+        1,
+        3,
+        BackgroundFlag::None,
+        TextAlignment::Left,
+        format!("Dungeon level: {}", game.dungeon_level),
     );
 
     tcod.panel.set_default_foreground(LIGHT_GREY);
@@ -1005,6 +1050,15 @@ fn handle_keys(tcod: &mut Tcod, game: &mut Game, objects: &mut Vec<Object>) -> P
         (Key { code: Text, .. }, "=", true) => {
             if let Some(item_type) = item_spawner_menu(&mut tcod.root) {
                 spawn_item_at_player(game, objects, item_type);
+            }
+            DidntTakeTurn
+        }
+        (Key { code: Text, .. }, "<", true) => {
+            let player_on_stairs = objects
+                .iter()
+                .any(|object| object.pos() == objects[PLAYER].pos() && object.name == "stairs");
+            if player_on_stairs {
+                next_level(tcod, game, objects);
             }
             DidntTakeTurn
         }
@@ -1204,8 +1258,9 @@ fn cast_freeze(
             LIGHT_BLUE,
         );
     } else {
-        game.messages.add("No enemy is close enough to freeze.", RED);
-        return UseResult::Cancelled
+        game.messages
+            .add("No enemy is close enough to freeze.", RED);
+        return UseResult::Cancelled;
     }
     UseResult::UsedUp
 }
@@ -1332,6 +1387,7 @@ fn new_game(tcod: &mut Tcod) -> (Game, Vec<Object>) {
         map: make_map(&mut objects),
         messages: Messages::new(),
         inventory: vec![],
+        dungeon_level: 1,
     };
 
     initialise_fov(tcod, &game.map);
@@ -1388,13 +1444,15 @@ fn save_game(game: &Game, objects: &[Object]) -> Result<(), Box<dyn Error>> {
 fn load_game() -> Result<(Game, Vec<Object>), Box<dyn Error>> {
     let mut json_save_state = String::new();
     let mut file = File::open("savegame")?;
-    file.read_to_string(&mut  json_save_state)?;
-    let result = serde_json::from_str::<(Game, Vec<Object>)>(&json_save_state)?; 
+    file.read_to_string(&mut json_save_state)?;
+    let result = serde_json::from_str::<(Game, Vec<Object>)>(&json_save_state)?;
     Ok(result)
 }
 
 fn main_menu(tcod: &mut Tcod) {
-    let img = tcod::image::Image::from_file("menu_background.png").ok().expect("Background image not found");
+    let img = tcod::image::Image::from_file("menu_background.png")
+        .ok()
+        .expect("Background image not found");
 
     while !tcod.root.window_closed() {
         tcod::image::blit_2x(&img, (0, 0), (-1, -1), &mut tcod.root, (0, 0));
@@ -1423,18 +1481,16 @@ fn main_menu(tcod: &mut Tcod) {
                 let (mut game, mut objects) = new_game(tcod);
                 play_game(tcod, &mut game, &mut objects);
             }
-            Some(1) => {
-                match load_game() {
-                    Ok((mut game, mut objects)) => {
-                        initialise_fov(tcod, &game.map);
-                        play_game(tcod, &mut game, &mut objects);
-                    }
-                    Err(_e) => {
-                        msgbox("\nNo saved game to load.\n", 24, &mut tcod.root);
-                        continue;
-                    }
+            Some(1) => match load_game() {
+                Ok((mut game, mut objects)) => {
+                    initialise_fov(tcod, &game.map);
+                    play_game(tcod, &mut game, &mut objects);
                 }
-            }
+                Err(_e) => {
+                    msgbox("\nNo saved game to load.\n", 24, &mut tcod.root);
+                    continue;
+                }
+            },
             Some(2) => {
                 break;
             }
