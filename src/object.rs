@@ -1,5 +1,6 @@
 use crate::game::{Game, Messages};
 use crate::item::get_equipped_in_slot;
+use crate::meta::{self, PermanentUpgrades};
 use serde::{Deserialize, Serialize};
 use tcod::colors::*;
 use tcod::console::*;
@@ -260,6 +261,22 @@ impl DeathCallback {
 
 pub fn player_death(player: &mut Object, game: &mut Game) {
     game.messages.add("You died!", RED);
+
+    let xp = player.fighter.map_or(0, |f| f.xp);
+    let echoes_earned = (xp / 10) + (game.dungeon_level * 25) as i32;
+
+    if echoes_earned > 0 {
+        game.messages.add(
+            format!("You gather {} Echoes from your journey.", echoes_earned),
+            MAGENTA,
+        );
+
+        let mut upgrades = meta::load_meta().unwrap_or_else(|_| PermanentUpgrades::new());
+        upgrades.echoes += echoes_earned;
+        meta::save_meta(&upgrades).unwrap_or_else(|error| {
+            println!("Error saving meta progress: {}", error);
+        });
+    }
 
     player.char = '%';
     player.color = DARK_RED;

@@ -1,2 +1,5 @@
 /target
 savegame
+.cargo
+.gitignore
+meta

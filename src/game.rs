@@ -2,6 +2,7 @@ use crate::ai::{ai_take_turn, move_by};
 use crate::constants::*;
 use crate::item::{drop_item, item_spawner_menu, spawn_item_at_player, use_item};
 use crate::map::{Map, make_map};
+use crate::meta::PermanentUpgrades;
 use crate::mut_two;
 use crate::object::{DeathCallback, Equipment, Fighter, Item, Object, Slot, pick_item_up};
 use crate::ui::{inventory_menu, menu, msgbox, render_all};
@@ -57,14 +58,14 @@ enum PlayerAction {
     Exit,
 }
 
-pub fn new_game(tcod: &mut Tcod) -> (Game, Vec<Object>) {
+pub fn new_game(tcod: &mut Tcod, upgrades: &PermanentUpgrades) -> (Game, Vec<Object>) {
     let mut player = Object::new(0, 0, '@', WHITE, "player", true);
     player.alive = true;
     player.fighter = Some(Fighter {
-        base_max_hp: 100,
-        hp: 100,
-        base_defense: 1,
-        base_power: 2,
+        base_max_hp: 100 + upgrades.bonus_hp,
+        hp: 100 + upgrades.bonus_hp,
+        base_defense: 1 + upgrades.bonus_defense,
+        base_power: 2 + upgrades.bonus_power,
         xp: 0,
         on_death: DeathCallback::Player,
     });

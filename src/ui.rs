@@ -1,5 +1,6 @@
 use crate::constants::*;
 use crate::game::{Game, Tcod, initialise_fov, load_game, new_game, play_game};
+use crate::meta::{self, PermanentUpgrades, save_meta};
 use crate::object::Object;
 use tcod::colors::*;
 use tcod::console::*;
@@ -248,10 +249,61 @@ fn get_names_under_mouse(mouse: Mouse, objects: &[Object], fov_map: &FovMap) -> 
     names.join(", ")
 }
 
+pub fn upgrade_menu(root: &mut Root, upgrades: &mut PermanentUpgrades) {
+    let mut choice = None;
+
+    while choice != Some(3) {
+        let hp_cost = 50 + (upgrades.bonus_hp / 2) * 10;
+        let power_cost = 100 + (upgrades.bonus_power) * 50;
+        let defense_cost = 100 + (upgrades.bonus_defense) * 50;
+
+        let header = format!(
+            "The Pantheon of Heroes\n\nYour Echoes: {}\n\nChoose an offering:",
+            upgrades.echoes
+        );
+        let options = &[
+            format!("Fortitude (+2 HP) - Cost: {}", hp_cost),
+            format!("Ferocity (+1 Power) - Cost: {}", power_cost),
+            format!("Resilience (+1 Defense) - Cost: {}", defense_cost),
+            "Return to menu".to_string(),
+        ];
+
+        choice = menu(&header, options, 50, root);
+
+        match choice {
+            Some(0) => {
+                if upgrades.echoes >= hp_cost {
+                    upgrades.echoes -= hp_cost;
+                    upgrades.bonus_hp += 2;
+                }
+            }
+            Some(1) => {
+                if upgrades.echoes >= power_cost {
+                    upgrades.echoes -= power_cost;
+                    upgrades.bonus_power += 2;
+                }
+            }
+            Some(2) => {
+                if upgrades.echoes >= defense_cost {
+                    upgrades.echoes -= defense_cost;
+                    upgrades.bonus_defense += 2;
+                }
+            }
+            Some(3) => {
+                break;
+            }
+            _ => {}
+        }
+        save_meta(upgrades).unwrap();
+    }
+}
+
 pub fn main_menu(tcod: &mut Tcod) {
     let img = tcod::image::Image::from_file("menu_background.png")
         .ok()
         .expect("Background image not found");
+
+    let mut upgrades = meta::load_meta().unwrap_or_else(|_| meta::PermanentUpgrades::new());
 
     while !tcod.root.window_closed() {
         tcod::image::blit_2x(&img, (0, 0), (-1, -1), &mut tcod.root, (0, 0));
@@ -272,12 +324,17 @@ pub fn main_menu(tcod: &mut Tcod) {
             "By Me",
         );
 
-        let choices = &["Play a new game", "Continue last game", "Quit"];
+        let choices = &[
+            "Play a new game",
+            "Continue last game",
+            "roguelike features for tim",
+            "Quit",
+        ];
         let choice = menu("", choices, 24, &mut tcod.root);
 
         match choice {
             Some(0) => {
-                let (mut game, mut objects) = new_game(tcod);
+                let (mut game, mut objects) = new_game(tcod, &upgrades);
                 play_game(tcod, &mut game, &mut objects);
             }
             Some(1) => match load_game() {
@@ -291,6 +348,9 @@ pub fn main_menu(tcod: &mut Tcod) {
                 }
             },
             Some(2) => {
+                upgrade_menu(&mut tcod.root, &mut upgrades);
+            }
+            Some(3) => {
                 break;
             }
             _ => {}
