@@ -303,9 +303,9 @@ pub fn main_menu(tcod: &mut Tcod) {
         .ok()
         .expect("Background image not found");
 
-    let mut upgrades = meta::load_meta().unwrap_or_else(|_| meta::PermanentUpgrades::new());
-
+    
     while !tcod.root.window_closed() {
+        let mut upgrades = meta::load_meta().unwrap_or_else(|_| meta::PermanentUpgrades::new());
         tcod::image::blit_2x(&img, (0, 0), (-1, -1), &mut tcod.root, (0, 0));
 
         tcod.root.set_default_foreground(LIGHT_YELLOW);
